@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8" />
+  <meta charset="utf-8">
   <title>动植物地图展示</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
   <style>
     body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
     #map { width: 100%; height: 100vh; }
@@ -15,42 +15,76 @@
 
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script>
-    // 初始化地图
-    var map = L.map('map').setView([20, 0], 2);
+    // 计算合适的最小缩放级别，保证世界宽度至少等于容器宽度
+    function calculateMinZoom(containerWidth) {
+      // 世界宽度(px) = 256 * 2^zoom
+      // 要求 256 * 2^zoom >= containerWidth
+      var zoom = Math.log2(containerWidth / 256);
+      return Math.ceil(zoom);
+    }
+
+    var mapEl = document.getElementById('map');
+    var containerWidth = mapEl.clientWidth || window.innerWidth;
+    var minZoom = calculateMinZoom(containerWidth);
+
+    // 定义地图边界和初始化参数
+    var globalBounds = L.latLngBounds(
+      L.latLng(-90, -180),
+      L.latLng(90, 180)
+    );
+
+    var map = L.map('map', {
+      minZoom: minZoom,
+      maxBounds: globalBounds,
+      worldCopyJump: false,
+      maxBoundsViscosity: 1.0 // 拖拽时严格限制在边界内
+    }).setView([20, 0], minZoom);
+
+    // 添加 OpenStreetMap 瓦片
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
 
-    // 配置数据文件和图片文件夹路径
+    // 创建标记图层组
+    var markersGroup = L.featureGroup().addTo(map);
+
+    // 数据路径
     var DATA_URL = 'records.json';
     var IMAGE_FOLDER = 'images/';
 
-    // 从 records.json 加载并渲染点位
     function loadRecords() {
       fetch(DATA_URL)
-        .then(function(response) {
-          if (!response.ok) throw new Error('网络错误 ' + response.status);
-          return response.json();
-        })
-        .then(function(arr) {
-          arr.forEach(function(record) {
-            // 构造图片完整路径：images/文件名
+        .then(function(res) { if (!res.ok) throw new Error(res.statusText); return res.json(); })
+        .then(function(data) {
+          data.forEach(function(record) {
             var imgPath = IMAGE_FOLDER + record.image;
-            var marker = L.marker([record.lat, record.lng]).addTo(map);
-            var popupContent =
-              '<b>' + record.species + '</b><br>' +
-              '<img src="' + imgPath + '" style="max-width:200px;"><br>' +
-              record.time.replace('T', ' ');
-            marker.bindPopup(popupContent);
+            var marker = L.marker([record.lat, record.lng]);
+            var popup = '<b>' + record.species + '</b><br>' +
+                        '<img src="' + imgPath + '" style="max-width:200px;"><br>' +
+                        record.time.replace('T', ' ');
+            marker.bindPopup(popup);
+            markersGroup.addLayer(marker);
           });
+          if (markersGroup.getLayers().length) {
+            // 只在上下留空，左右贴边
+            map.fitBounds(markersGroup.getBounds(), { paddingTopLeft: [0,20], paddingBottomRight: [0,20] });
+          }
         })
-        .catch(function(err) {
-          console.error('加载记录失败：', err);
-        });
+        .catch(function(err) { console.error('加载失败', err); });
     }
 
-    // 页面初始化
     loadRecords();
+
+    // 窗口大小变化时重新计算 minZoom 并更新
+    window.addEventListener('resize', function() {
+      var w = mapEl.clientWidth || window.innerWidth;
+      var newMin = calculateMinZoom(w);
+      if (newMin !== minZoom) {
+        minZoom = newMin;
+        map.setMinZoom(minZoom);
+        map.setView(map.getCenter(), Math.max(map.getZoom(), minZoom));
+      }
+    });
   </script>
 </body>
 </html>
