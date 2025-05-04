@@ -58,7 +58,6 @@
           return res.json();
         })
         .then(function(data) {
-          console.log('Loaded records:', data);
           data.forEach(function(record) {
             var imgPath = IMAGE_FOLDER + record.image;
             var marker = L.marker([record.lat, record.lng]);
@@ -67,19 +66,18 @@
               '<b>' + record.species + '</b><br>' +
               '<img src="' + imgPath + '" style="max-width:200px;display:block;margin:auto;" /><br>' +
               record.time.replace('T', ' ');
-            // 绑定弹窗，并在图片加载完成后更新尺寸
-            marker.bindPopup(popupContent, { maxWidth: 250 });
+            marker.bindPopup(popupContent);
+            // 监听打开事件，立即更新并在图片加载后再次更新
             marker.on('popupopen', function(e) {
               var popup = e.popup;
+              // 立即尝试更新一次，以调整初始尺寸
+              popup.update();
+              // 监听图片加载完成后再更新
               var img = popup.getElement().querySelector('img');
-              if (img) {
-                if (img.complete) {
+              if (img && !img.complete) {
+                img.addEventListener('load', function() {
                   popup.update();
-                } else {
-                  img.addEventListener('load', function() {
-                    popup.update();
-                  });
-                }
+                });
               }
             });
             markersGroup.addLayer(marker);
