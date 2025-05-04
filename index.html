@@ -17,8 +17,6 @@
   <script>
     // 计算合适的最小缩放级别，保证世界宽度至少等于容器宽度
     function calculateMinZoom(containerWidth) {
-      // 世界宽度(px) = 256 * 2^zoom
-      // 要求 256 * 2^zoom >= containerWidth
       var zoom = Math.log2(containerWidth / 256);
       return Math.ceil(zoom);
     }
@@ -37,45 +35,68 @@
       minZoom: minZoom,
       maxBounds: globalBounds,
       worldCopyJump: false,
-      maxBoundsViscosity: 1.0 // 拖拽时严格限制在边界内
+      maxBoundsViscosity: 1.0
     }).setView([20, 0], minZoom);
 
-    // 添加 OpenStreetMap 瓦片
+    // 添加 OpenStreetMap 瓦片，禁止无缝复制
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap contributors'
+      attribution: '&copy; OpenStreetMap contributors',
+      noWrap: true
     }).addTo(map);
 
-    // 创建标记图层组
+    // 用于存放标记的图层组
     var markersGroup = L.featureGroup().addTo(map);
 
-    // 数据路径
+    // 数据文件和图片文件夹
     var DATA_URL = 'records.json';
     var IMAGE_FOLDER = 'images/';
 
     function loadRecords() {
       fetch(DATA_URL)
-        .then(function(res) { if (!res.ok) throw new Error(res.statusText); return res.json(); })
+        .then(function(res) {
+          if (!res.ok) throw new Error('Status ' + res.status);
+          return res.json();
+        })
         .then(function(data) {
+          console.log('Loaded records:', data);
           data.forEach(function(record) {
             var imgPath = IMAGE_FOLDER + record.image;
             var marker = L.marker([record.lat, record.lng]);
-            var popup = '<b>' + record.species + '</b><br>' +
-                        '<img src="' + imgPath + '" style="max-width:200px;"><br>' +
-                        record.time.replace('T', ' ');
-            marker.bindPopup(popup);
+            // 构造弹窗内容
+            var popupContent =
+              '<b>' + record.species + '</b><br>' +
+              '<img src="' + imgPath + '" style="max-width:200px;display:block;margin:auto;" /><br>' +
+              record.time.replace('T', ' ');
+            // 绑定弹窗，并在图片加载完成后更新尺寸
+            marker.bindPopup(popupContent, { maxWidth: 250 });
+            marker.on('popupopen', function(e) {
+              var popup = e.popup;
+              var img = popup.getElement().querySelector('img');
+              if (img) {
+                if (img.complete) {
+                  popup.update();
+                } else {
+                  img.addEventListener('load', function() {
+                    popup.update();
+                  });
+                }
+              }
+            });
             markersGroup.addLayer(marker);
           });
+          // 自动缩放：左右无边距，上下 20px
           if (markersGroup.getLayers().length) {
-            // 只在上下留空，左右贴边
-            map.fitBounds(markersGroup.getBounds(), { paddingTopLeft: [0,20], paddingBottomRight: [0,20] });
+            map.fitBounds(markersGroup.getBounds(), { padding: [20, 0] });
           }
         })
-        .catch(function(err) { console.error('加载失败', err); });
+        .catch(function(err) {
+          console.error('加载 records.json 失败，确保通过 HTTP(S) 协议加载页面，或检查文件路径/名称', err);
+        });
     }
 
     loadRecords();
 
-    // 窗口大小变化时重新计算 minZoom 并更新
+    // 窗口大小变化时，重新计算最小缩放级别
     window.addEventListener('resize', function() {
       var w = mapEl.clientWidth || window.innerWidth;
       var newMin = calculateMinZoom(w);
